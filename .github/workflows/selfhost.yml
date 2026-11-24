@@ -42,6 +42,8 @@ jobs:
             - name: Check deployment tooling
               run: |
                   bash -n deploy/selfhost/bootstrap.sh deploy/selfhost/receive.sh deploy/selfhost/backup.sh
+                  node --check deploy/selfhost/group-browser-test.ts
+                  python3 -m py_compile deploy/selfhost/install-web.py deploy/selfhost/verify-server.py
                   python3 -m unittest discover -s deploy/selfhost -p '*_test.py'
             - name: Install dependencies
               run: pnpm install --frozen-lockfile
@@ -80,6 +82,8 @@ jobs:
                   COMMIT: ${{ github.sha }}
               run: |
                   umask 077
+                  test -n "$DEPLOY_KEY"
+                  test -n "$KNOWN_HOSTS"
                   mkdir -p ~/.ssh
                   printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/chat-deploy
                   printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts

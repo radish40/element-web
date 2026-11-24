@@ -64,6 +64,28 @@ sudo /usr/local/libexec/radish-chat/publish.py rollback <完整提交SHA>
 本次选择关闭公开注册，由管理员创建账号。首个管理员为 `radish`，首次登录后修改密码，
 并在客户端设置中配置加密恢复方式。
 
+已建立 `test_alice`、`test_bob`、`test_carol` 三个测试账号和“部署验收群”。
+管理员 `radish` 收到该群邀请。验收包含三账号入群、各自发消息、全部账号核对消息、
+群内文件共享和下载，以及浏览器界面收发。验收群使用普通消息，正式使用时通过客户端
+创建的私密群可启用端到端加密。
+
+管理员初始凭据在服务器 `/opt/radish-chat/private/admin.json`，测试账号凭据和群 ID 在
+`/opt/radish-chat/private/test-accounts.json`。本次交付也在操作者本机的
+`D:\AI-AGENT\luo-xd\.private-substore` 保存了对应的 `chat-admin.json` 和 `chat-test-accounts.json`。
+这些文件由服务端生成，未加入 Git 仓库。
+
+部署 API 验收在服务器以 root 执行 `python3 deploy/selfhost/verify-server.py`。
+浏览器群聊验收在装好依赖的本机执行以下命令。
+
+```sh
+pnpm exec playwright install chromium
+node deploy/selfhost/group-browser-test.ts /安全目录/chat-test-accounts.json
+```
+
+如使用已安装的 Edge，可通过 `PLAYWRIGHT_EXECUTABLE_PATH` 指定浏览器路径。
+脚本使用凭据文件旁的 `chat-browser` 目录保存三个账号各自的测试浏览器状态，
+并在同目录输出截图。它只会对指定的三个测试账号处理测试期设备身份恢复。
+
 创建新账号时，服务器执行交互命令，密码在终端输入。
 
 ```sh
@@ -93,9 +115,10 @@ sudo systemctl list-timers radish-chat-backup.timer certbot-renew.timer
 把本目录复制到服务器，在服务器以 root 运行 `bootstrap.sh`。
 它会安装固定版本的服务、持久化数据、受限发布账号和备份定时器。
 第一次配置中生成的服务端密钥会被保留。修改后端配置时会重新生成配置文件，
-因此相关定制应进入脚本或单独的配置管理。
+同时原子替换文件并保存 `.before-bootstrap` 备份，因此相关定制应进入脚本或单独的配置管理。
 
-`nginx.conf` 安装为 `/etc/nginx/conf.d/radish-chat.conf`。
+签发证书后，用 root 执行 `python3 deploy/selfhost/install-web.py`，
+将 `nginx.conf` 安装为 `/etc/nginx/conf.d/radish-chat.conf` 并配置根域名的 Matrix 发现。
 证书名称为 `radish-chat`，覆盖 `chat.547626.xyz` 和 `matrix.547626.xyz`。
 根域名的 `/.well-known/matrix/client`、`/.well-known/matrix/server` 委派到 matrix 子域名。
 当前部署范围包含文字、群聊、图片和文件。语音视频通话的 Element Call/LiveKit 服务单独配置。

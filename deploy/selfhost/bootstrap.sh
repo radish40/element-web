@@ -27,6 +27,8 @@ import json
 from pathlib import Path
 import secrets
 import os
+import shutil
+import tempfile
 
 os.umask(0o077)
 root = Path('/opt/radish-chat')
@@ -82,9 +84,15 @@ log = {
 }
 for name, content in [('homeserver.yaml', config), ('log.config', log)]:
     target = synapse / name
-    target.write_text(json.dumps(content, indent=4) + '\n')
-    os.chown(target, 991, 991)
-    target.chmod(0o600)
+    if target.exists():
+        shutil.copy2(target, target.with_name(name + '.before-bootstrap'))
+    with tempfile.NamedTemporaryFile(mode='w', dir=synapse, delete=False) as staged:
+        staged.write(json.dumps(content, indent=4) + '\n')
+        staged.flush()
+        os.fsync(staged.fileno())
+        os.fchown(staged.fileno(), 991, 991)
+        os.fchmod(staged.fileno(), 0o600)
+    os.replace(staged.name, target)
 PYTHON
 
 install -d -m 0755 /etc/containers/systemd
@@ -149,7 +157,7 @@ printf '%s\n' 'chat-deploy ALL=(root) NOPASSWD: /usr/local/libexec/radish-chat/p
 chmod 0440 /etc/sudoers.d/radish-chat-deploy
 visudo -cf /etc/sudoers.d/radish-chat-deploy
 
-if ! semanage fcontext -l | grep -Fq '/opt/radish-chat/releases(/.*)?'; then
+if ! semanage fcontext -l | grep -F '/opt/radish-chat/releases(/.*)?' > /dev/null; then
     semanage fcontext -a -t httpd_sys_content_t '/opt/radish-chat/releases(/.*)?'
 fi
 restorecon -RF "$root/releases"
