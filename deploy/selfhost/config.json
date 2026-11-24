@@ -1,0 +1,28 @@
+{
+    "_copyright": "Copyright 2026 radish40. SPDX-License-Identifier: AGPL-3.0-only",
+    "default_server_config": {
+        "m.homeserver": {
+            "base_url": "https://matrix.547626.xyz",
+            "server_name": "547626.xyz"
+        }
+    },
+    "disable_custom_urls": true,
+    "disable_guests": true,
+    "disable_3pid_login": true,
+    "brand": "Radish Chat",
+    "default_country_code": "CN",
+    "default_theme": "light",
+    "permalink_prefix": "https://chat.547626.xyz",
+    "embedded_pages": {
+        "login_for_welcome": true
+    },
+    "room_directory": {
+        "servers": ["547626.xyz"]
+    },
+    "terms_and_conditions_links": [
+        {
+            "text": "源代码（AGPL）",
+            "url": "https://github.com/radish40/element-web"
+        }
+    ]
+}

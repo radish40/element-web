@@ -1,0 +1,111 @@
+# Copyright 2026 radish40
+# SPDX-License-Identifier: AGPL-3.0-only
+name: Publish Radish Chat
+
+on:
+    push:
+        branches: [main]
+    pull_request:
+        branches: [main]
+    workflow_dispatch:
+        inputs:
+            rollback_commit:
+                description: "Optional full commit SHA of an existing server release to restore"
+                type: string
+                required: false
+
+permissions:
+    contents: read
+
+concurrency:
+    group: radish-chat-${{ github.event_name == 'pull_request' && github.ref || 'production' }}
+    cancel-in-progress: false
+
+jobs:
+    build:
+        if: ${{ !inputs.rollback_commit }}
+        runs-on: ubuntu-latest
+        timeout-minutes: 45
+        env:
+            NODE_OPTIONS: --max-old-space-size=6144
+            NX_DAEMON: "false"
+            NX_NO_CLOUD: "true"
+        steps:
+            - uses: actions/checkout@v4
+              with:
+                  persist-credentials: false
+            - uses: actions/setup-node@v4
+              with:
+                  node-version: "24"
+            - name: Install the pinned package manager
+              run: npm install --global pnpm@$(node -p 'require("./package.json").devEngines.packageManager.version')
+            - name: Check deployment tooling
+              run: |
+                  bash -n deploy/selfhost/bootstrap.sh deploy/selfhost/receive.sh deploy/selfhost/backup.sh
+                  python3 -m unittest discover -s deploy/selfhost -p '*_test.py'
+            - name: Install dependencies
+              run: pnpm install --frozen-lockfile
+            - name: Build the fork
+              env:
+                  VERSION: v1.12.35-radish-${{ github.sha }}
+              run: |
+                  cp deploy/selfhost/config.json apps/web/config.json
+                  pnpm --filter element-web build
+            - name: Package the release
+              env:
+                  COMMIT: ${{ github.sha }}
+              run: |
+                  cp deploy/selfhost/config.json apps/web/webapp/config.json
+                  node -e 'require("fs").writeFileSync("apps/web/webapp/revision.json", JSON.stringify({commit:process.env.COMMIT,upstream:"v1.12.35",source:"https://github.com/radish40/element-web/tree/"+process.env.COMMIT})+"\n")'
+                  tar -C apps/web/webapp -czf radish-chat.tar.gz .
+            - uses: actions/upload-artifact@v4
+              with:
+                  name: radish-chat-${{ github.sha }}
+                  path: radish-chat.tar.gz
+                  retention-days: 14
+
+    deploy:
+        needs: build
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        runs-on: ubuntu-latest
+        timeout-minutes: 10
+        steps:
+            - uses: actions/download-artifact@v4
+              with:
+                  name: radish-chat-${{ github.sha }}
+            - name: Publish atomically
+              env:
+                  DEPLOY_KEY: ${{ secrets.CHAT_DEPLOY_KEY }}
+                  KNOWN_HOSTS: ${{ secrets.CHAT_KNOWN_HOSTS }}
+                  COMMIT: ${{ github.sha }}
+              run: |
+                  umask 077
+                  mkdir -p ~/.ssh
+                  printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/chat-deploy
+                  printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+                  ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -i ~/.ssh/chat-deploy chat-deploy@132.226.127.9 "deploy $COMMIT" < radish-chat.tar.gz
+            - name: Verify the public release
+              env:
+                  COMMIT: ${{ github.sha }}
+              run: |
+                  curl --fail --retry 3 https://chat.547626.xyz/revision.json | jq -e --arg commit "$COMMIT" '.commit == $commit'
+                  curl --fail --retry 3 https://matrix.547626.xyz/_matrix/client/versions | jq -e '.versions | length > 0'
+
+    rollback:
+        if: inputs.rollback_commit && github.ref == 'refs/heads/main'
+        runs-on: ubuntu-latest
+        timeout-minutes: 5
+        steps:
+            - name: Restore an existing release
+              env:
+                  DEPLOY_KEY: ${{ secrets.CHAT_DEPLOY_KEY }}
+                  KNOWN_HOSTS: ${{ secrets.CHAT_KNOWN_HOSTS }}
+                  COMMIT: ${{ inputs.rollback_commit }}
+              run: |
+                  [[ "$COMMIT" =~ ^[0-9a-f]{40}$ ]]
+                  umask 077
+                  mkdir -p ~/.ssh
+                  printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/chat-deploy
+                  printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+                  ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -i ~/.ssh/chat-deploy chat-deploy@132.226.127.9 "rollback $COMMIT"
+                  curl --fail --retry 3 https://chat.547626.xyz/revision.json | jq -e --arg commit "$COMMIT" '.commit == $commit'
